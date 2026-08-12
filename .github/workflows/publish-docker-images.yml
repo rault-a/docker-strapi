@@ -7,13 +7,25 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-24.04-arm
+    strategy:
+      fail-fast: false
+      matrix:
+        variant: [debian, alpine]
+        arch: [amd64, arm64]
+        include:
+          - arch: amd64
+            runs-on: ubuntu-24.04
+          - arch: arm64
+            runs-on: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runs-on }}
     permissions:
-      contents: write
+      contents: read
       packages: write
+    outputs:
+      version: ${{ steps.vars.outputs.tag }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Get the version
         id: vars
@@ -22,29 +34,47 @@ jobs:
       - name: Log in to GHCR
         run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
 
-      - name: Build and push (debian)
+      - name: Build and push (${{ matrix.variant }}, ${{ matrix.arch }})
         run: |
           version="${{ steps.vars.outputs.tag }}"
+          suffix="${{ matrix.variant == 'alpine' && '-alpine' || '' }}"
+          tag="ghcr.io/rault-a/strapi:$version$suffix-${{ matrix.arch }}"
           docker build --build-arg STRAPI_VERSION="$version" --build-arg NODE_VERSION=24 \
-            -t "ghcr.io/rault-a/strapi:$version" -t "ghcr.io/rault-a/strapi:latest" \
-            images/strapi-debian
-          docker push "ghcr.io/rault-a/strapi:$version"
-          docker push "ghcr.io/rault-a/strapi:latest"
+            -t "$tag" \
+            "images/strapi-${{ matrix.variant }}"
+          docker push "$tag"
 
-      - name: Build and push (alpine)
+  publish-manifests:
+    needs: build
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      packages: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Log in to GHCR
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+      - name: Create and push multi-arch manifests
         run: |
-          version="${{ steps.vars.outputs.tag }}"
-          docker build --build-arg STRAPI_VERSION="$version" --build-arg NODE_VERSION=24 \
-            -t "ghcr.io/rault-a/strapi:$version-alpine" -t "ghcr.io/rault-a/strapi:latest-alpine" \
-            images/strapi-alpine
-          docker push "ghcr.io/rault-a/strapi:$version-alpine"
-          docker push "ghcr.io/rault-a/strapi:latest-alpine"
+          version="${{ needs.build.outputs.version }}"
+          for suffix in "" "-alpine"; do
+            for tag in "$version$suffix" "latest$suffix"; do
+              docker buildx imagetools create \
+                -t "ghcr.io/rault-a/strapi:$tag" \
+                "ghcr.io/rault-a/strapi:$version$suffix-amd64" \
+                "ghcr.io/rault-a/strapi:$version$suffix-arm64"
+            done
+          done
 
       - name: Create Release in GitHub
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release create "v${{ steps.vars.outputs.tag }}" \
+          version="${{ needs.build.outputs.version }}"
+          gh release create "v$version" \
             --repo "${{ github.repository }}" \
-            --title "Release ${{ steps.vars.outputs.tag }}" \
-            --notes "strapi v${{ steps.vars.outputs.tag }}" || true
+            --title "Release $version" \
+            --notes "strapi v$version" || true
