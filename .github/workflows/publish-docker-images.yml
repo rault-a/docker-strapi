@@ -31,6 +31,15 @@ jobs:
           docker push "ghcr.io/rault-a/strapi:$version"
           docker push "ghcr.io/rault-a/strapi:latest"
 
+      - name: Build and push (alpine)
+        run: |
+          version="${{ steps.vars.outputs.tag }}"
+          docker build --build-arg STRAPI_VERSION="$version" --build-arg NODE_VERSION=24 \
+            -t "ghcr.io/rault-a/strapi:$version-alpine" -t "ghcr.io/rault-a/strapi:latest-alpine" \
+            images/strapi-alpine
+          docker push "ghcr.io/rault-a/strapi:$version-alpine"
+          docker push "ghcr.io/rault-a/strapi:latest-alpine"
+
       - name: Create Release in GitHub
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

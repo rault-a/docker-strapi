@@ -9,10 +9,10 @@ if [ "$*" = "strapi" ]; then
 
     EXTRA_ARGS=${EXTRA_ARGS}
 
-    echo "Using strapi $(strapi version)"
+    echo "Using strapi $STRAPI_VERSION"
     echo "No project found at /srv/app. Creating a new strapi project ..."
 
-    DOCKER=true strapi new . --no-run \
+    npx -y create-strapi@${STRAPI_VERSION} . --no-run --non-interactive --skip-cloud \
       --dbclient=$DATABASE_CLIENT \
       --dbhost=$DATABASE_HOST \
       --dbport=$DATABASE_PORT \
@@ -45,7 +45,7 @@ if [ "$*" = "strapi" ]; then
   fi
 
   echo "Starting your app (with ${STRAPI_MODE:-develop})..."
-  exec strapi "${STRAPI_MODE:-develop}"
+  exec yarn strapi "${STRAPI_MODE:-develop}"
 
 else
   exec "$@"
